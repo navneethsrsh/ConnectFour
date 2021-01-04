@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# Run connect four game
+
+clear
+python3 main.py

@@ -1,6 +1,10 @@
 import os
+import time
+import copy
 import termcolor
 from collections import namedtuple
+# ToDO: Fix bug for directional lookup not searching till the end
+# ToDo: Logging functionality
 
 
 class Player:
@@ -10,18 +14,17 @@ class Player:
     Class Variables:
     ----------------
     index --> Number denoting the player e.g. 1 for Player 1
-    color --> Unused (at this point)
 
     Attributes:
     -----------
     name --> name of the player
     """
     index = 0
-    color = ''
+    attempts = 4
 
     def __new__(cls):
         """
-        Update index and create a new instance
+        Update index and create a new player
         """
         cls.index += 1
         return object.__new__(cls)
@@ -30,7 +33,10 @@ class Player:
         """
         Retrieve the name of the player as user input
         """
-        self.name = input(f"Player {self.index} Name: ")
+        while self.attempts:
+            with self:
+                self.name = input(f"Player {self.index} Name: ")
+                self.attempts = self.raise_exceptions(self.name)
 
     def __str__(self):
         """
@@ -40,8 +46,56 @@ class Player:
         """
         return self.name
 
+    def __enter__(self):
+        """
+        Context manager entry
 
-class Board(object):
+        :return: Current instance
+        """
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        Context manager exit
+
+        :param exc_type: Type of exception raised
+        :param exc_val: The message of the exception
+        :param exc_tb: Traceback
+        :return: boolean(True) when exception is handled
+
+        Additional Info:
+        ----------------
+        User has four(4) additional attempts after the first
+        incorrect attempt to enter a valid name. Failing which
+        the user name will be defaulted to:
+            Player1 for player 1
+            Player2 for player 2
+        """
+
+        if exc_type is ValueError:
+            self.attempts -= 1
+            if self.attempts:
+                error = termcolor.colored(exc_val, 'red', 'on_yellow', attrs=['bold'])
+                print(error, f'\nYou have {self.attempts} attempts left. '
+                             f'After which board size will be defaulted to \"Player{self.index}\"')
+            else:
+                termcolor.cprint('\n\nToo many incorrect inputs', 'red', attrs=['bold'])
+                time.sleep(1)
+                self.name = f'Player{self.index}'
+                print(f'Name has been defaulted to \"Player{self.index}\"')
+            return True
+
+    @staticmethod
+    def raise_exceptions(name: str) -> int:
+        if name == '':
+            raise ValueError('Name cannot be blank')
+        elif len(name) < 3:
+            raise ValueError('Name is too short. Minimum length is three(3)')
+        else:
+            return 0
+
+
+class Board:
     """
     Class to play Connect Four
 
@@ -64,66 +118,90 @@ class Board(object):
     The class and it's functions are defined in such way that simply
     calling the class will start and run the game.
     """
-    # Class Variables -----------------------------------
 
     size = 0
     attempts = 4
-    is_player = namedtuple("is_player", ["name", "index"])
+    is_player = namedtuple("is_player", ["name", "index", "color"])
     is_playing = namedtuple("is_playing", ["now", "next"])
-
-    # Built-in Methods -------------------------------------
 
     def __new__(cls):
         """
-        Create a new instance of the class and build board
+        Create a new board and it's corresponding mapping matrix
 
-        This method is not required technically but exists conceptually.
+        This method is technically unnecessary but, exists conceptually.
         The concept being the board must exist in order for the game to
-        be played. Keeping in line with that concept this method creates
-        a new instance of this class and also accepts and validates the
-        board size as user input by calling the classmethod - build_board
-        """
-
-        print("Building your board!")
-        instance = object.__new__(cls)
-        while instance.attempts:
-            cls.build_board(instance)
-        return instance
-
-    def __init__(self):
-        """
-        Initiate gameplay
-
-        1. Initialization of the mapping matrix
-        2. Setting up Player 1 and 2
-        3. Setting up current player
-        4. Display initial empty board onto terminal screen
-        5. Call self as a function to run gameplay
+        be played. Keeping in line with that concept this method
+            1. Creates a new instance of this class
+            2. Accepts and validates the board size as user input by calling
+               the class-method - build_board
+            3. Initializes and builds the mapping matrix
+            4. Displays the empty board on screen
 
         Additional Info:
         ----------------
         The mapping matrix is a 2-dimensional list (a list within
         a list) which maintains the current state of the board
         displayed on screen
-
+        The p1 and p2 attributes are dummy values here. This is
+        needed to print the initial board
         """
 
+        print("Building your board!")
+        self = object.__new__(cls)
+        while self.attempts:
+            cls.build_board(self)
         self.mapping = []
         for row in range(self.size):
             self.mapping.append([])
             for col in range(self.size):
                 self.mapping[row].append(0)
-        self.p1 = self.is_player(Player().name, Player.index)
-        self.p2 = self.is_player(Player().name, Player.index)
+        print("Okay")
+        print(self.mapping)
+        cls.p1 = cls.is_player('name', 1, 'grey')  # Dummy player 1 for initial printing of board
+        cls.p2 = cls.is_player('name', 2, 'grey')  # Dummy player 2 for initial printing of board
+
+        print(self)
+        return self
+
+    def __init__(self):
+        """
+        Initiate gameplay
+
+        1. Setting up Player 1 and 2
+            1.1. Get name as user input
+            1.2. Generate index for player (done in class Player)
+            1.3. Get choice of color as user input
+        2. Setting up current player
+        3. Initialize and update replay[] list with blank mapping
+           matrix
+        4. Re-print the blank board -- to clear the player info
+           from screen
+        5. Call self as a function to run gameplay
+
+        Additional Info:
+        ----------------
+        Player 2 will have one less option in comparison to Player 1
+        when it comes to choosing colors. The set of colors available
+        in color_set are limited to those provided by the module
+        termcolor.
+        The color 'grey' is the color used for an unoccupied position
+        on the board and is therefore not a choice available to
+        either player.
+        """
+
+        color_set = {'red', 'yellow', 'blue', 'magenta', 'green', 'cyan', 'white'}
+        self.p1 = self.is_player(Player().name, Player.index, self.set_color(color_set))
+        color_set -= {self.p1.color}
+        self.p2 = self.is_player(Player().name, Player.index, self.set_color(color_set))
         self.plyr = self.is_playing(self.p1, self.p2)
         self.replay = []
-        self.replay.append(self.mapping)
+        self.replay.append(copy.deepcopy(self.mapping))
         print(self)
         self()
 
     def __call__(self):
         """
-        Calling self as function runs gameplay
+        Calling self as a function runs gameplay
 
             When an instance is called:
             1. Appropriate player (1 or 2) makes a move
@@ -151,10 +229,12 @@ class Board(object):
                     _row = i
                     break
             self.mapping[_row][_col] = self.plyr.now.index
+            self.replay.append(copy.deepcopy(self.mapping))
             print(self)
             state = self.solution_map(_row, _col)
             if state == 1:
                 print(f'{self.plyr.now.name} has won the game!')
+                self.playback(input("Would you like to watch a replay? (y/n): "))
                 break
             else:
                 reversed(self)
@@ -188,8 +268,8 @@ class Board(object):
 
         color_table = {
             0: 'grey',
-            1: 'red',
-            2: 'yellow'
+            1: self.p1.color,
+            2: self.p2.color
         }
         os.system('clear')
         text = ''
@@ -204,19 +284,18 @@ class Board(object):
 
     def __enter__(self):
         """
-        Context Manager Entry - Only used to push-back the board size
-        as input by the user
+        Context Manager Entry
 
-        :return: Size of the board entered
+        :return: Current instance
 
         """
 
-        return self.size
+        return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """
         Context Manager method used to handle ValueError exception
-        when user inputs size of the board in classmethod - build_board()
+        when user inputs size of the board in class-method - build_board()
 
         :param exc_type: The type of exception (at this point only ValueError)
         :param exc_val: The message related to the exception
@@ -231,14 +310,21 @@ class Board(object):
         if exc_type is ValueError:
             self.attempts -= 1
             if self.attempts:
-                print(exc_val, f'\nYou have {self.attempts} attempts left. '
-                               f'After which board size will be defaulted to 7')
+                error = termcolor.colored(exc_val, 'red', 'on_yellow', attrs=['bold'])
+                print(error, f'\nYou have {self.attempts} attempts left. '
+                             f'After which board size will be defaulted to 7')
             else:
                 self.size = 7
+                os.system('clear')
+                termcolor.cprint('\n\nToo many incorrect inputs', 'red', attrs=['bold'])
+                time.sleep(1)
                 print(f'Board size has been defaulted to {self.size}')
+                color = ['red', 'yellow', 'green']
+                for u in range(3):
+                    shape = termcolor.colored(' '*(u + 1) + '\u2b24', color[u])
+                    print('Loading game ' + shape, end='\r')
+                    time.sleep(1)
             return True
-
-    # User-defined Methods -------------------------------
 
     def map_value(self, row: int, col: int) -> int:
         """
@@ -320,14 +406,25 @@ class Board(object):
                                      list(map(lambda x: [y for y in x.values()],
                                               [val for val in path_table.values()]))))))) >= 1
 
-    def playback(self):
+    def playback(self, watch: str):
         """
-        IN PROGRESS
-        :return: None
-        """
-        pass
+        Function to run a replay of the game
 
-    # Class Method --------------------------------
+        :param watch: Value: y or Value: n representing if the players
+                      want to watch a replay
+
+        Additional Info:
+        ----------------
+        The replay[] list maintains a deepcopy of the mapping matrix for every
+        move made on the board. This method simply loops over each matrix and
+        prints the board.
+        """
+
+        if watch == 'y':
+            for b_map in self.replay:
+                self.mapping = b_map
+                print(self)
+                time.sleep(1)
 
     @classmethod
     def build_board(cls, self) -> int:
@@ -338,10 +435,23 @@ class Board(object):
         :param self: Instance of this class
         :return: Value: 1 if validation is passed
         """
-        cls.size = int(input("Enter the size of the board [5...10]: "))
-        with self as size:
-            if not 5 <= size <= 10:
-                raise ValueError(f"Oops! The value {size} is out of range!!")
+        with self:
+            self.size = int(input("Enter the size of the board [5...10]: "))
+            if not 5 <= self.size <= 10:
+                raise ValueError(f"Oops! The value {self.size} is out of range!!")
             else:
                 self.attempts = 0
         return 1
+
+    @staticmethod
+    def set_color(colors: set) -> str:
+        print('Colors:', end='  ')
+        for color in colors:
+            termcolor.cprint('\u2b24  ', color, end='')
+        print()
+        print('Index:', end='   ')
+        for index in range(len(colors)):
+            print(str(index + 1) + '  ', end='')
+        print()
+        select = int(input('Choose your color [Enter the index of color]: ')) - 1
+        return list(colors)[select]
